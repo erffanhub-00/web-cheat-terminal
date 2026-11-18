@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — cheat-terminal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">&gt;_</span>
+    <span class="brand-name">cheat-terminal</span>
+    <span class="brand-tag">admin</span>
+  </div>
+  <a class="admin-link" href="/">← Back to the site</a>
+  <button id="logout-btn" class="logout-btn hidden">Log out</button>
+</header>
+
+<main class="admin-main">
+  <div id="dev-warning" class="dev-warning hidden">
+    You are using the <strong>dev password</strong> (the ADMIN_PASSWORD secret is not set).
+    Set a real password with <code>wrangler secret put ADMIN_PASSWORD</code> before sharing this site.
+  </div>
+
+  <section id="login-view" class="card">
+    <h1>Admin login</h1>
+    <p class="dim">Only the owner can manage commands. Visitors never see this page's controls.</p>
+    <form id="login-form">
+      <label>Password
+        <input id="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary-btn">Log in</button>
+      <p id="login-error" class="error hidden"></p>
+    </form>
+  </section>
+
+  <section id="manage-view" class="hidden">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="entries">Entries</button>
+      <button class="tab-btn" data-tab="categories">Categories</button>
+    </div>
+
+    <div id="tab-entries" class="tab-panel">
+      <div class="toolbar">
+        <input id="entry-search" type="search" placeholder="Search entries…" autocomplete="off">
+        <button id="new-entry-btn" class="primary-btn">+ New entry</button>
+      </div>
+      <p id="entry-count" class="dim"></p>
+      <table class="admin-table">
+        <thead><tr><th>Command</th><th>Category</th><th>Level</th><th></th></tr></thead>
+        <tbody id="entry-rows"></tbody>
+      </table>
+
+      <form id="entry-form" class="card form-card hidden">
+        <h2 id="entry-form-title">New entry</h2>
+        <input type="hidden" id="entry-id">
+        <label>Command <input id="f-command" required></label>
+        <label>Title <input id="f-title" required></label>
+        <label>Description <textarea id="f-description" rows="3"></textarea></label>
+        <label>Category
+          <select id="f-category"></select>
+        </label>
+        <label>Tags (comma-separated) <input id="f-tags" placeholder="docker,containers"></label>
+        <label>Example <input id="f-example"></label>
+        <label>Usefulness
+          <select id="f-level">
+            <option value="1">1 — Essential</option>
+            <option value="2" selected>2 — Common</option>
+            <option value="3">3 — Advanced</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn">Save</button>
+          <button type="button" id="entry-cancel" class="ghost-btn">Cancel</button>
+        </div>
+        <p id="entry-error" class="error hidden"></p>
+      </form>
+    </div>
+
+    <div id="tab-categories" class="tab-panel hidden">
+      <form id="category-form" class="card form-card">
+        <h2>New category</h2>
+        <label>Name (lowercase, dashes) <input id="c-name" required placeholder="networking"></label>
+        <label>Title <input id="c-title" required placeholder="Networking"></label>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn">Add category</button>
+        </div>
+        <p id="category-error" class="error hidden"></p>
+      </form>
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Title</th><th>Entries</th><th></th></tr></thead>
+        <tbody id="category-rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/admin.js"></script>
+</body>
+</html>

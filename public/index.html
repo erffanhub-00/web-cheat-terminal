@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cheat-terminal — search your cheat sheets</title>
+<meta name="description" content="Search 1392 terminal commands: Linux, PowerShell, Docker and Git. Copy any command with one click.">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">&gt;_</span>
+    <span class="brand-name">cheat-terminal</span>
+    <span class="brand-tag">web</span>
+  </div>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search commands…  (try: docker ps)" autocomplete="off" spellcheck="false" aria-label="Search commands">
+    <span class="search-hint">live search</span>
+  </div>
+  <a class="admin-link" href="/admin">Admin</a>
+</header>
+
+<main class="layout">
+  <aside class="sidebar" aria-label="Categories">
+    <div class="side-title">Categories</div>
+    <ul id="categories" class="cat-list"></ul>
+    <div class="side-title">Usefulness</div>
+    <div id="levels" class="level-list" role="group" aria-label="Filter by usefulness">
+      <button class="level-chip active" data-level="0">All levels</button>
+      <button class="level-chip" data-level="1"><span class="dot dot-essential"></span>Essential</button>
+      <button class="level-chip" data-level="2"><span class="dot dot-common"></span>Common</button>
+      <button class="level-chip" data-level="3"><span class="dot dot-advanced"></span>Advanced</button>
+    </div>
+    <div class="side-note" id="count-note"></div>
+  </aside>
+
+  <section class="results" aria-label="Results">
+    <div id="status" class="status">Loading…</div>
+    <ul id="list" class="result-list"></ul>
+  </section>
+
+  <aside class="detail" id="detail" aria-label="Details">
+    <div class="detail-empty">Pick a command to see it in full — description, tags and the copy button live here.</div>
+  </aside>
+</main>
+
+<footer class="footer">
+  <span>cheat-terminal web · Linux, PowerShell, Docker, Git · favorites are saved only in your browser</span>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>

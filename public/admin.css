@@ -1,0 +1,104 @@
+/* Admin panel — small additions on top of styles.css. */
+.admin-main { max-width: 960px; margin: 0 auto; padding: 24px 16px 60px; }
+.hidden { display: none !important; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.card h1, .card h2 { margin: 0 0 12px; }
+.dim { color: var(--dim); }
+.error { color: var(--danger); }
+.dev-warning {
+  background: #3a2b12;
+  border: 1px solid #8a6d1b;
+  color: #ffd97a;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+.dev-warning code { font-family: ui-monospace, monospace; }
+.logout-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+label { display: block; margin-bottom: 12px; font-size: 14px; }
+label input, label select, label textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font: inherit;
+}
+label input:focus, label select:focus, label textarea:focus { border-color: var(--accent); outline: none; }
+.primary-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ghost-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.tab-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+.tab-btn.active { border-color: var(--accent); background: var(--surface-2); }
+.toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
+.toolbar input {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font: inherit;
+}
+.admin-table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+.admin-table th, .admin-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.admin-table th { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.admin-table td code { font-family: ui-monospace, monospace; }
+.row-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  margin-right: 6px;
+}
+.row-btn.danger { border-color: var(--danger); color: var(--danger); }
+.form-actions { display: flex; gap: 10px; margin-top: 4px; }
+@media (max-width: 760px) {
+  .admin-table th:nth-child(3), .admin-table td:nth-child(3) { display: none; }
+}
