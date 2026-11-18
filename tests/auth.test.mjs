@@ -38,9 +38,16 @@ test('checkPassword accepts the right password and rejects the wrong one', async
   assert.equal(await checkPassword('', PASSWORD), false);
 });
 
-test('dev password is used only when ADMIN_PASSWORD is unset', () => {
-  assert.equal(isDevPassword({}), true);
+test('no password configured means admin login is disabled', async () => {
+  assert.equal(await checkPassword('admin123', null), false);
+  assert.equal(await checkPassword('anything', undefined), false);
+  assert.equal(await verifySessionCookie('admin_session=x.y.z', null), false);
+});
+
+test('dev password is flagged only when ADMIN_PASSWORD is the dev password', () => {
+  assert.equal(isDevPassword({}), false);
   assert.equal(isDevPassword({ ADMIN_PASSWORD: 'x' }), false);
+  assert.equal(isDevPassword({ ADMIN_PASSWORD: DEV_PASSWORD }), true);
   assert.equal(DEV_PASSWORD.length > 0, true);
 });
 

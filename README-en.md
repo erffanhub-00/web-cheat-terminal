@@ -28,7 +28,7 @@ npm run seed:local   # creates the local database and seeds all 1392 commands
 npm run dev          # http://localhost:8787
 ```
 
-For local testing the admin password is `admin123` — **local testing only**, and the admin panel shows a warning while that password is active. Set the real password with `wrangler secret`.
+For local testing the admin password is `admin123` — **local testing only** (read from `.dev.vars`, which is never committed), and the admin panel shows a warning while that password is active. On the live site, admin login is disabled entirely until a real password is set with `wrangler secret` — no default password works there.
 
 ## Deploy to Cloudflare (free)
 
@@ -72,7 +72,7 @@ Everything returns JSON:
 npm test
 ```
 
-22 unit tests for the API handlers (search, filters, levels, CRUD, admin accept/reject) — all must be green. For a real smoke test, start the local server with `npm run dev` and check the pages and the API with curl (home page, `/api/categories`, `/api/entries` with 1392 rows, admin login with a wrong password must return 401).
+25 unit tests for the API handlers (search, filters, levels, CRUD, admin accept/reject) — all must be green. For a real smoke test, run `bash scripts/smoke-test.sh`: it starts the local server and checks the pages and the API with curl (home page, `/api/categories`, `/api/entries` with 1392 rows, admin login with a wrong password must return 401).
 
 ## Stack
 

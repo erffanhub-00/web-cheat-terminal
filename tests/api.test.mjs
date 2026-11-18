@@ -259,6 +259,21 @@ test('embedded frontend serves pages without an ASSETS binding', async () => {
   assert.equal(unknownApi.status, 404);
 });
 
+test('admin login is disabled when no password is set', async () => {
+  const db = createTestDb();
+  loadSchema(db);
+  await seedTestData(db);
+  const env = { DB: db }; // no ADMIN_PASSWORD at all
+  const login = await call(env, '/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'admin123' }),
+  });
+  assert.equal(login.status, 401);
+  const me = await call(env, '/api/admin/me');
+  assert.equal(me.status, 401);
+});
+
 test('logout clears the session cookie', async () => {
   const env = await setup();
   const cookie = await login(env);

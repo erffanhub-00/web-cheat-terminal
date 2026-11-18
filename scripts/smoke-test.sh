@@ -30,6 +30,14 @@ echo "== seed (local D1) =="
 npm run seed:local > /tmp/smoke-out.txt 2>&1 || { cat /tmp/smoke-out.txt; exit 1; }
 echo "ok   - seeded"
 
+echo "== dev password (local only) =="
+if [ ! -f .dev.vars ]; then
+  printf '%s\n' 'ADMIN_PASSWORD=admin123' > .dev.vars
+  echo "ok   - created .dev.vars with the local dev password (gitignored, never pushed)"
+else
+  echo "ok   - .dev.vars already present"
+fi
+
 echo "== wrangler dev =="
 "$WRANGLER" dev --local --port "$PORT" > /tmp/wrangler-dev.log 2>&1 &
 DEV_PID=$!
