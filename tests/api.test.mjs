@@ -240,6 +240,25 @@ test('unknown api route returns 404 JSON', async () => {
   assert.equal(typeof body.error, 'string');
 });
 
+test('embedded frontend serves pages without an ASSETS binding', async () => {
+  const env = await setup();
+  const home = await call(env, '/');
+  assert.equal(home.status, 200);
+  assert.match(home.body, /cheat-terminal/);
+  assert.match(home.body, /id="search"/);
+  const admin = await call(env, '/admin');
+  assert.equal(admin.status, 200);
+  assert.match(admin.body, /Admin login/);
+  const appJs = await call(env, '/app.js');
+  assert.equal(appJs.status, 200);
+  assert.match(appJs.body, /localStorage/);
+  const css = await call(env, '/styles.css');
+  assert.equal(css.status, 200);
+  assert.match(css.body, /--bg/);
+  const unknownApi = await call(env, '/api/nope');
+  assert.equal(unknownApi.status, 404);
+});
+
 test('logout clears the session cookie', async () => {
   const env = await setup();
   const cookie = await login(env);

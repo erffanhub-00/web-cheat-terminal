@@ -32,6 +32,7 @@ import {
   clearSessionCookie,
   verifySessionCookie,
 } from './auth.js';
+import { serveEmbedded } from './frontend-embedded.js';
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -199,13 +200,19 @@ export default {
       return error('internal error', 500);
     }
     // Static frontend. The ASSETS binding exists on wrangler dev/deploy;
-    // without it (plain unit tests) there is nothing to serve.
+    // without it (plain unit tests, single-file API deploy) the frontend
+    // embedded in src/frontend-embedded.js is served instead.
     if (env.ASSETS) {
       const response = await env.ASSETS.fetch(request);
       if (response.status !== 404 || url.pathname.startsWith('/api/')) return response;
       // Unknown page -> the app shell handles client-side routing.
       if (url.pathname === '/admin') return env.ASSETS.fetch(new Request(new URL('/admin.html', url), request));
       return env.ASSETS.fetch(new Request(new URL('/index.html', url), request));
+    }
+    if (!url.pathname.startsWith('/api/')) {
+      const embedded = serveEmbedded(url.pathname);
+      if (embedded) return embedded;
+      return serveEmbedded('/index.html');
     }
     return new Response('Not found', { status: 404 });
   },
