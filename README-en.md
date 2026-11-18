@@ -2,6 +2,8 @@
 
 The web version of cheat-terminal — search your cheat sheets from the browser, nothing to install. The same 1392 commands as the terminal app (Linux, PowerShell, Docker, Git) with live search, categories, a usefulness filter and one-click copy.
 
+**Live site:** https://web-cheat-terminal.terminal88project.workers.dev
+
 - **1392 commands** from day one: Linux 513, PowerShell 398, Git 267, Docker 214
 - **Live search** while you type — across titles, commands, descriptions and tags
 - **A real browser**: category sidebar with counts, results list, detail pane with the full description
@@ -31,6 +33,8 @@ npm run dev          # http://localhost:8787
 For local testing the admin password is `admin123` — **local testing only** (read from `.dev.vars`, which is never committed), and the admin panel shows a warning while that password is active. On the live site, admin login is disabled entirely until a real password is set with `wrangler secret` — no default password works there.
 
 ## Deploy to Cloudflare (free)
+
+The site is already deployed: https://web-cheat-terminal.terminal88project.workers.dev — the D1 database is named `cheat-terminal` (id `f5ed3d74-8468-4496-8e72-c80b12d1bbd7`) and seeded with all 1392 commands. To deploy again or from scratch:
 
 ```sh
 npx wrangler login
