@@ -218,6 +218,36 @@ test('import creates missing categories; a missing category defaults to general'
   assert.equal(cats.body.categories.find((c) => c.name === 'general').title, 'General');
 });
 
+test('import fills an empty example and never overwrites a fuller one', async () => {
+  const env = await setup();
+  const cookie = await login(env);
+  // The test seed stores docker ps with an empty example.
+  const { status, body } = await call(env, '/api/admin/import', {
+    method: 'POST',
+    headers: authed(cookie),
+    body: JSON.stringify([
+      { category: 'docker', command: 'docker ps', description: 'List running containers', example: 'docker ps --format "table {{.Names}}\\t{{.Status}}"' },
+    ]),
+  });
+  assert.equal(status, 200);
+  assert.equal(body.updated, 1);
+  let ps = await call(env, '/api/entries?q=docker%20ps');
+  assert.equal(ps.body.entries.find((e) => e.command === 'docker ps').example, 'docker ps --format "table {{.Names}}\\t{{.Status}}"');
+  // A shorter incoming example must not overwrite the fuller stored one.
+  const shorter = await call(env, '/api/admin/import', {
+    method: 'POST',
+    headers: authed(cookie),
+    body: JSON.stringify([
+      { category: 'docker', command: 'docker ps', description: 'List running containers', example: 'docker ps' },
+    ]),
+  });
+  assert.equal(shorter.status, 200);
+  assert.equal(shorter.body.updated, 0);
+  assert.equal(shorter.body.unchanged, 1);
+  ps = await call(env, '/api/entries?q=docker%20ps');
+  assert.equal(ps.body.entries.find((e) => e.command === 'docker ps').example, 'docker ps --format "table {{.Names}}\\t{{.Status}}"');
+});
+
 test('a shorter incoming description never overwrites a fuller one', async () => {
   const env = await setup();
   const cookie = await login(env);

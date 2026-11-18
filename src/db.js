@@ -236,10 +236,12 @@ export async function deleteEntry(db, id) {
 // a command that already exists in the same category is updated only
 // where the incoming data is fuller — a non-empty description longer
 // than the stored one, non-empty tags that differ, a level of 1-3 that
-// differs. Everything else counts as unchanged. New commands are
-// inserted; missing fields are tolerated (empty description/tags, level
-// 0 means "not specified": new entries default to Common, updates leave
-// the level alone); a missing category is created on the fly.
+// differs, and a non-empty example longer than the stored one (or
+// filling an empty one). Everything else counts as unchanged. New
+// commands are inserted; missing fields are tolerated (empty
+// description/tags, level 0 means "not specified": new entries default
+// to Common, updates leave the level alone); a missing category is
+// created on the fly.
 
 export async function exportEntries(db) {
   const { results } = await db
@@ -397,6 +399,17 @@ export async function analyzeImport(db, parsed) {
       fuller.tags = incomingTags;
       changed = true;
     }
+    // Examples follow the same fuller rule as descriptions: an import
+    // can fill an empty example or replace a shorter one, but a shorter
+    // incoming example never overwrites a fuller stored one. Without
+    // this, re-importing an enriched seed would update descriptions
+    // but silently drop every example.
+    const incomingExample = entry.example.trim();
+    const storedExample = (existing.example || '').trim();
+    if (incomingExample && (storedExample === '' || runeLength(incomingExample) > runeLength(storedExample))) {
+      fuller.example = incomingExample;
+      changed = true;
+    }
     if (entry.level >= 1 && entry.level <= 3 && entry.level !== existing.level) {
       fuller.level = entry.level;
       changed = true;
@@ -447,6 +460,10 @@ export async function applyImport(db, analysis) {
       if (action.fuller.tags !== undefined) {
         sets.push('tags = ?');
         args.push(action.fuller.tags);
+      }
+      if (action.fuller.example !== undefined) {
+        sets.push('example = ?');
+        args.push(action.fuller.example);
       }
       if (action.fuller.level !== undefined) {
         sets.push('level = ?');

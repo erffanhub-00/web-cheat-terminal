@@ -132,6 +132,27 @@ req('DELETE', f'/api/admin/entries/{entry_id}')
 gone = json.load(urllib.request.urlopen('$BASE/api/entries?q=smoke%20test%20cmd'))
 assert gone['total'] == 0, gone
 "
+check "admin edit flow: load entry, change description, save, read back" python3 -c "
+import json, urllib.request
+cookie = open('/tmp/smoke-cookie.txt').read().strip()
+def req(method, path, body=None):
+    r = urllib.request.Request('$BASE' + path, method=method, data=json.dumps(body).encode() if body is not None else None, headers={'Content-Type': 'application/json', 'Cookie': cookie})
+    return json.load(urllib.request.urlopen(r))
+# Regression test for the v1.1.0 edit bug: the Edit button loads the entry
+# through GET /api/admin/entries/:id, which did not exist (404), so the
+# form never opened. This exercises the exact flow the panel uses.
+created = req('POST', '/api/admin/entries', {'command': 'smoke edit cmd', 'title': 'smoke edit', 'description': 'before', 'category': 'linux', 'level': 1})
+entry_id = created['entry']['id']
+loaded = req('GET', f'/api/admin/entries/{entry_id}')
+assert loaded['entry']['description'] == 'before', loaded
+saved = req('PUT', f'/api/admin/entries/{entry_id}', {'command': 'smoke edit cmd', 'title': 'smoke edit', 'description': 'after', 'category': 'linux', 'level': 1})
+assert saved['entry']['description'] == 'after', saved
+reloaded = req('GET', f'/api/admin/entries/{entry_id}')
+assert reloaded['entry']['description'] == 'after', reloaded
+req('DELETE', f'/api/admin/entries/{entry_id}')
+gone = json.load(urllib.request.urlopen('$BASE/api/entries?q=smoke%20edit%20cmd'))
+assert gone['total'] == 0, gone
+"
 
 echo "== admin import / export =="
 cat > /tmp/smoke-import.json <<'EOF'

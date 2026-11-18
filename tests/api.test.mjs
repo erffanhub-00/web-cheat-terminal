@@ -200,6 +200,53 @@ test('admin entry CRUD round-trips with a session', async () => {
   assert.equal(gone.status, 404);
 });
 
+test('admin GET /api/admin/entries/:id loads one entry for editing', async () => {
+  // Regression test for the v1.1.0 bug: the admin panel's Edit button
+  // loads the entry through this route before opening the form, but the
+  // route did not exist — Edit failed with 404 "unknown api route" and
+  // the form never opened. The PUT save path was fine all along.
+  const env = await setup();
+  const anon = await call(env, '/api/admin/entries/2');
+  assert.equal(anon.status, 401);
+  const cookie = await login(env);
+  const auth = { Cookie: cookie.split(';')[0] };
+
+  const found = await call(env, '/api/admin/entries/2', { headers: auth });
+  assert.equal(found.status, 200);
+  assert.equal(found.body.entry.command, 'grep -r foo .');
+
+  const missing = await call(env, '/api/admin/entries/999', { headers: auth });
+  assert.equal(missing.status, 404);
+  const bad = await call(env, '/api/admin/entries/abc', { headers: auth });
+  assert.equal(bad.status, 400);
+
+  // Full edit round-trip, the way the panel does it: create -> load into
+  // the form -> save a changed description -> load again and read back.
+  const created = await call(env, '/api/admin/entries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...auth },
+    body: JSON.stringify({ command: 'edit me', title: 'edit me', description: 'before', category: 'linux', tags: 'linux', level: 2 }),
+  });
+  assert.equal(created.status, 201);
+  const id = created.body.entry.id;
+  const loaded = await call(env, '/api/admin/entries/' + id, { headers: auth });
+  assert.equal(loaded.status, 200);
+  assert.equal(loaded.body.entry.description, 'before');
+  const saved = await call(env, '/api/admin/entries/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...auth },
+    body: JSON.stringify({ command: 'edit me', title: 'edit me', description: 'after', category: 'linux', tags: 'linux', level: 2 }),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.entry.description, 'after');
+  const reloaded = await call(env, '/api/admin/entries/' + id, { headers: auth });
+  assert.equal(reloaded.body.entry.description, 'after');
+  const deleted = await call(env, '/api/admin/entries/' + id, { method: 'DELETE', headers: auth });
+  assert.equal(deleted.status, 200);
+  const gone = await call(env, '/api/admin/entries/' + id, { headers: auth });
+  assert.equal(gone.status, 404);
+});
+
 test('admin entry validation rejects bad input', async () => {
   const env = await setup();
   const cookie = await login(env);

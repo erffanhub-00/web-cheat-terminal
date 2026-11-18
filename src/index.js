@@ -8,7 +8,7 @@
 //   POST /api/admin/login          — { password } -> sets the session cookie
 //   GET  /api/admin/me             — 200 when logged in (also reports devPassword)
 //   POST /api/admin/logout         — clears the session cookie
-//   GET/POST /api/admin/entries, PUT/DELETE /api/admin/entries/:id
+//   GET/POST /api/admin/entries, GET/PUT/DELETE /api/admin/entries/:id
 //   GET/POST /api/admin/categories, PUT/DELETE /api/admin/categories/:name
 // Everything else is served from the static frontend (public/).
 
@@ -179,6 +179,16 @@ async function handleApi(request, env, url) {
       const { errors, entry } = await createEntry(env.DB, body);
       if (errors.length > 0) return error(errors.join('; '), 400);
       return json({ entry }, 201);
+    }
+    // The admin panel's Edit button loads the entry through this route
+    // before opening the form — without it, Edit silently did nothing
+    // (404 "unknown api route"). Regression-tested in tests/api.test.mjs.
+    if (parts.length === 4 && method === 'GET') {
+      const id = parseId(parts[3]);
+      if (!id) return error('invalid entry id', 400);
+      const entry = await getEntry(env.DB, id);
+      if (!entry) return error('entry not found', 404);
+      return json({ entry });
     }
     if (parts.length === 4 && method === 'PUT') {
       const id = parseId(parts[3]);

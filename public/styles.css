@@ -148,7 +148,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* ---------- history ---------- */
 #history-section { margin-top: 20px; }
-.history-list { list-style: none; margin: 0; padding: 0; }
+/* The history list scrolls inside itself, so a long history never pushes
+   the sidebar layout around or gets cut off by the page. */
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 0;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 .history-list li { margin: 2px 0; }
 .history-btn {
   display: block;
