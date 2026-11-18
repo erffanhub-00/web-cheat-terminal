@@ -34,6 +34,15 @@ export function createTestDb() {
     exec(sql) {
       sqlite.exec(sql);
     },
+    // D1 batch: run prepared statements in order, return one result per
+    // statement. The statements are the objects prepare().bind() returns.
+    async batch(statements) {
+      const results = [];
+      for (const stmt of statements) {
+        results.push(await stmt.run());
+      }
+      return results;
+    },
   };
 }
 

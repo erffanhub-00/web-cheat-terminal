@@ -353,33 +353,46 @@ export async function analyzeImport(db, parsed) {
     fileTitles.set(category.name, category.title);
   });
 
+  // Bulk-load every existing category and entry ONCE, then classify in
+  // memory. The old code did one D1 round-trip per entry (plus one per
+  // category), so a full 1392-entry file needed ~1400 sequential lookups
+  // and the live dry-run preview ran ~78s before failing. Two SELECTs
+  // replace all of that; classification below is pure in-memory work.
+  const { results: categoryRows } = await db.prepare('SELECT name FROM categories').all();
+  const existingCategories = new Set((categoryRows || []).map((r) => r.name));
+  const { results: entryRows } = await db
+    .prepare('SELECT id, category, command, title, description, tags, example, level FROM entries')
+    .all();
+  const existingByKey = new Map();
+  for (const row of entryRows || []) {
+    existingByKey.set(row.category + '\0' + row.command, toEntry(row));
+  }
+
   // Categories the entries need, created if missing.
   const categoriesToCreate = [];
   const needed = [...new Set([...seen.values()].map((e) => e.category))];
   for (const name of needed) {
-    const existing = await getCategory(db, name);
-    if (!existing) {
+    if (!existingCategories.has(name)) {
       categoriesToCreate.push({ name, title: fileTitles.get(name) || displayTitle(name) });
     }
   }
   // A file category that no entry uses is still created (it was declared).
   for (const [name, title] of fileTitles) {
     if (!needed.includes(name)) {
-      const existing = await getCategory(db, name);
-      if (!existing && !categoriesToCreate.some((c) => c.name === name)) {
+      if (!existingCategories.has(name) && !categoriesToCreate.some((c) => c.name === name)) {
         categoriesToCreate.push({ name, title });
       }
     }
   }
 
-  // Classify each entry against the live database.
+  // Classify each entry against the bulk-loaded snapshot.
   const actions = [];
   const samples = { new: [], updated: [], unchanged: [] };
   let isNew = 0;
   let updated = 0;
   let unchanged = 0;
   for (const entry of seen.values()) {
-    const existing = await getEntryByCommandAndCategory(db, entry.command, entry.category);
+    const existing = existingByKey.get(entry.category + '\0' + entry.command);
     if (!existing) {
       isNew += 1;
       actions.push({ kind: 'new', entry });
@@ -434,8 +447,12 @@ export async function analyzeImport(db, parsed) {
 }
 
 export async function applyImport(db, analysis) {
+  // Collect every write as a prepared statement and run them through
+  // db.batch() in chunks of at most 500 — one round-trip per chunk
+  // instead of one per entry. D1 executes a batch in order.
+  const statements = [];
   for (const c of analysis.categoriesToCreate) {
-    await db.prepare('INSERT INTO categories (name, title) VALUES (?, ?)').bind(c.name, c.title).run();
+    statements.push(db.prepare('INSERT INTO categories (name, title) VALUES (?, ?)').bind(c.name, c.title));
   }
   let created = 0;
   let updated = 0;
@@ -443,12 +460,13 @@ export async function applyImport(db, analysis) {
     if (action.kind === 'new') {
       const e = action.entry;
       const level = e.level >= 1 && e.level <= 3 ? e.level : 2;
-      await db
-        .prepare(
-          'INSERT INTO entries (category, command, title, description, tags, example, level) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        )
-        .bind(e.category, e.command, e.title || e.command, e.description, e.tags, e.example, level)
-        .run();
+      statements.push(
+        db
+          .prepare(
+            'INSERT INTO entries (category, command, title, description, tags, example, level) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          )
+          .bind(e.category, e.command, e.title || e.command, e.description, e.tags, e.example, level),
+      );
       created += 1;
     } else if (action.kind === 'update') {
       const sets = [];
@@ -469,12 +487,12 @@ export async function applyImport(db, analysis) {
         sets.push('level = ?');
         args.push(action.fuller.level);
       }
-      await db
-        .prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`)
-        .bind(...args, action.id)
-        .run();
+      statements.push(db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).bind(...args, action.id));
       updated += 1;
     }
+  }
+  for (let i = 0; i < statements.length; i += 500) {
+    await db.batch(statements.slice(i, i + 500));
   }
   return {
     new: created,

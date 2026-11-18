@@ -265,3 +265,73 @@ test('a shorter incoming description never overwrites a fuller one', async () =>
   const ps = await call(env, '/api/entries?q=docker%20ps');
   assert.equal(ps.body.entries.find((e) => e.command === 'docker ps').description, 'List running containers');
 });
+
+// Regression test for the live import timeout (v1.2.0): analyzeImport used
+// to do one D1 lookup per entry, so a 1392-entry file needed ~1400
+// sequential round-trips and the live dry-run failed after ~78s. It now
+// bulk-loads once, so the number of queries is constant no matter how big
+// the file is: exactly two SELECTs (categories + entries).
+test('analyze does a constant number of queries regardless of file size', async () => {
+  const db = createTestDb();
+  loadSchema(db);
+  await seedTestData(db);
+  let prepares = 0;
+  const counting = { ...db, prepare(sql) { prepares += 1; return db.prepare(sql); } };
+  const env = { DB: counting, ADMIN_PASSWORD: 'secret123' };
+  const cookie = await login(env);
+  const makeFile = (n) => ({
+    entries: Array.from({ length: n }, (_, i) => ({
+      category: 'linux',
+      command: `bulk cmd ${i}`,
+      title: `bulk cmd ${i}`,
+      description: 'Bulk import entry',
+      level: 1,
+    })),
+  });
+  for (const n of [30, 300]) {
+    prepares = 0;
+    const { status, body } = await call(env, '/api/admin/import?dryRun=1', {
+      method: 'POST',
+      headers: authed(cookie),
+      body: JSON.stringify(makeFile(n)),
+    });
+    assert.equal(status, 200);
+    assert.equal(body.new, n);
+    assert.equal(prepares, 2, `expected 2 bulk queries for ${n} entries, got ${prepares}`);
+  }
+});
+
+// applyImport must write through db.batch() in chunks of at most 500
+// statements, not one await per entry.
+test('apply writes in batches of at most 500 statements', async () => {
+  const db = createTestDb();
+  loadSchema(db);
+  await seedTestData(db);
+  const batches = [];
+  const counting = {
+    ...db,
+    batch: async (stmts) => { batches.push(stmts.length); return db.batch(stmts); },
+  };
+  const env = { DB: counting, ADMIN_PASSWORD: 'secret123' };
+  const cookie = await login(env);
+  const file = {
+    entries: Array.from({ length: 1200 }, (_, i) => ({
+      category: 'linux',
+      command: `batch cmd ${i}`,
+      title: `batch cmd ${i}`,
+      description: 'Batch import entry',
+      level: 1,
+    })),
+  };
+  const { status, body } = await call(env, '/api/admin/import', {
+    method: 'POST',
+    headers: authed(cookie),
+    body: JSON.stringify(file),
+  });
+  assert.equal(status, 200);
+  assert.equal(body.new, 1200);
+  assert.deepEqual(batches, [500, 500, 200]);
+  assert.ok(batches.every((n) => n <= 500));
+  const after = await call(env, '/api/entries?limit=1');
+  assert.equal(after.body.total, 1205);
+});
