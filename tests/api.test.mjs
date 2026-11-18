@@ -45,22 +45,26 @@ test('GET /api/categories returns categories with counts', async () => {
   assert.equal(status, 200);
   assert.equal(body.categories.length, 2);
   assert.equal(body.categories.find((c) => c.name === 'linux').count, 2);
-  assert.equal(body.categories.find((c) => c.name === 'docker').count, 2);
+  assert.equal(body.categories.find((c) => c.name === 'docker').count, 3);
 });
 
 test('GET /api/entries lists everything by default', async () => {
   const env = await setup();
   const { status, body } = await call(env, '/api/entries');
   assert.equal(status, 200);
-  assert.equal(body.total, 4);
-  assert.equal(body.entries.length, 4);
+  assert.equal(body.total, 5);
+  assert.equal(body.entries.length, 5);
 });
 
 test('search matches command, title, description and tags', async () => {
   const env = await setup();
   const byCommand = await call(env, '/api/entries?q=docker%20ps');
-  assert.equal(byCommand.body.total, 1);
+  // The exact command must come first — a description-only match
+  // ('Port unreachable', whose description mentions 'docker ps') must
+  // never outrank it.
+  assert.equal(byCommand.body.total, 2);
   assert.equal(byCommand.body.entries[0].command, 'docker ps');
+  assert.equal(byCommand.body.entries[1].command, 'Port unreachable');
   const byTag = await call(env, '/api/entries?q=containers');
   assert.equal(byTag.body.total, 2);
   const byDescription = await call(env, '/api/entries?q=running%20containers');
@@ -69,10 +73,34 @@ test('search matches command, title, description and tags', async () => {
   assert.equal(none.body.total, 0);
 });
 
+test('search ranking: exact command, starts-with, contains, title, description', async () => {
+  // A database of its own, one entry per ranking tier, all matching 'docker ps'.
+  const env = makeEnv();
+  env.DB.exec(`
+    INSERT INTO categories (name, title) VALUES ('linux', 'Linux'), ('docker', 'Docker');
+    INSERT INTO entries (category, command, title, description, tags, example, level) VALUES
+      ('linux', 'Port unreachable', 'Port unreachable', 'docker ps (Ports column), ss -tlnp', 'linux,troubleshooting', '', 2),
+      ('docker', 'docker ps', 'docker ps', 'List running containers', 'docker,containers', '', 1),
+      ('docker', 'docker ps -a', 'docker ps -a', 'All containers (even stopped)', 'docker,containers', '', 1),
+      ('linux', 'sudo docker ps', 'sudo docker ps', 'Run as root', 'linux,docker', '', 2),
+      ('linux', 'ls', 'docker ps listing', 'List files', 'linux,files', '', 2);
+  `);
+  const { status, body } = await call(env, '/api/entries?q=docker%20ps');
+  assert.equal(status, 200);
+  assert.equal(body.total, 5);
+  assert.deepEqual(
+    body.entries.map((e) => e.command),
+    ['docker ps', 'docker ps -a', 'sudo docker ps', 'ls', 'Port unreachable'],
+  );
+  // Exact match is case-insensitive: 'Docker PS' still puts 'docker ps' first.
+  const upper = await call(env, '/api/entries?q=Docker%20PS');
+  assert.equal(upper.body.entries[0].command, 'docker ps');
+});
+
 test('category and level filters work (number and name)', async () => {
   const env = await setup();
   const byCategory = await call(env, '/api/entries?category=docker');
-  assert.equal(byCategory.body.total, 2);
+  assert.equal(byCategory.body.total, 3);
   const byLevelNumber = await call(env, '/api/entries?level=1');
   assert.equal(byLevelNumber.body.total, 2);
   const byLevelName = await call(env, '/api/entries?level=advanced');
@@ -246,6 +274,9 @@ test('embedded frontend serves pages without an ASSETS binding', async () => {
   assert.equal(home.status, 200);
   assert.match(home.body, /cheat-terminal/);
   assert.match(home.body, /id="search"/);
+  // The public site has no visible link to the admin panel — the owner
+  // types /admin in the address bar. The route itself still works.
+  assert.doesNotMatch(home.body, /href="\/admin"/);
   const admin = await call(env, '/admin');
   assert.equal(admin.status, 200);
   assert.match(admin.body, /Admin login/);

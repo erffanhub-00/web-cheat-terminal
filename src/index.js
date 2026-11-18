@@ -23,6 +23,10 @@ import {
   createEntry,
   updateEntry,
   deleteEntry,
+  exportEntries,
+  parseImportData,
+  analyzeImport,
+  applyImport,
 } from './db.js';
 import {
   adminPassword,
@@ -111,6 +115,47 @@ async function handleApi(request, env, url) {
 
   if (parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'logout' && method === 'POST') {
     return json({ ok: true }, 200, { 'Set-Cookie': clearSessionCookie() });
+  }
+
+  // --- Admin: import / export ---
+  if (parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'export' && method === 'GET') {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const categories = await listCategories(env.DB);
+    const entries = await exportEntries(env.DB);
+    return json(
+      {
+        version: 1,
+        categories: categories.map((c) => ({ name: c.name, title: c.title })),
+        entries,
+      },
+      200,
+      { 'Content-Disposition': 'attachment; filename="cheat-terminal-export.json"' },
+    );
+  }
+
+  if (parts[0] === 'api' && parts[1] === 'admin' && parts[2] === 'import' && method === 'POST') {
+    const denied = await requireAdmin(request, env);
+    if (denied) return denied;
+    const body = await readJson(request);
+    if (body === null) return error('invalid JSON body', 400);
+    const parsed = parseImportData(body);
+    if (parsed.errors) return json({ error: parsed.errors.join('; '), errors: parsed.errors }, 400);
+    const analysis = await analyzeImport(env.DB, parsed);
+    if (analysis.errors.length > 0) {
+      return json({ error: analysis.errors.join('; '), errors: analysis.errors }, 400);
+    }
+    const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dryRun') === 'true';
+    if (dryRun) {
+      return json({
+        preview: true,
+        ...analysis.stats,
+        samples: analysis.samples,
+        categoriesToCreate: analysis.categoriesToCreate.map((c) => c.name),
+      });
+    }
+    const result = await applyImport(env.DB, analysis);
+    return json({ preview: false, ...result });
   }
 
   // --- Admin: entries ---

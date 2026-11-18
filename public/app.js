@@ -11,6 +11,8 @@ const CATEGORY_COLORS = {
 const LEVEL_NAMES = { 1: 'Essential', 2: 'Common', 3: 'Advanced' };
 const LEVEL_DOT = { 1: 'dot-essential', 2: 'dot-common', 3: 'dot-advanced' };
 const FAVORITES_KEY = 'ct-favorites';
+const HISTORY_KEY = 'ct-history';
+const HISTORY_MAX = 10;
 
 const searchInput = document.getElementById('search');
 const categoriesEl = document.getElementById('categories');
@@ -19,12 +21,16 @@ const listEl = document.getElementById('list');
 const statusEl = document.getElementById('status');
 const detailEl = document.getElementById('detail');
 const countNoteEl = document.getElementById('count-note');
+const historySectionEl = document.getElementById('history-section');
+const historyListEl = document.getElementById('history-list');
+const clearHistoryBtn = document.getElementById('clear-history');
 const toastEl = document.getElementById('toast');
 
 let categories = [];
 let activeCategory = '';
 let activeLevel = 0;
 let favorites = loadFavorites();
+let history = loadHistory();
 let selectedId = null;
 let searchTimer = null;
 
@@ -39,6 +45,30 @@ function loadFavorites() {
 
 function saveFavorites() {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
+}
+
+// History: recently viewed or copied commands, newest first, no
+// duplicates, capped. Lives only in this browser, like favorites —
+// nothing about it ever reaches the server.
+function loadHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((h) => h && Number.isInteger(h.id) && typeof h.command === 'string' && h.command)
+      .slice(0, HISTORY_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(items) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+}
+
+function recordHistory(items, entry) {
+  const rest = items.filter((h) => h.id !== entry.id);
+  return [{ id: entry.id, command: entry.command }, ...rest].slice(0, HISTORY_MAX);
 }
 
 function showToast(message) {
@@ -91,6 +121,20 @@ function renderCategories() {
     )
     .join('');
   countNoteEl.textContent = `${total} commands · ${categories.length} categories`;
+}
+
+function categoryTitle(name) {
+  const found = categories.find((c) => c.name === name);
+  return found ? found.title : name;
+}
+
+function renderHistory() {
+  historySectionEl.classList.toggle('hidden', history.length === 0);
+  historyListEl.innerHTML = history
+    .map(
+      (h) => `<li><button class="history-btn" data-history="${h.id}" title="${escapeHtml(h.command)}">${escapeHtml(h.command)}</button></li>`,
+    )
+    .join('');
 }
 
 async function loadEntries() {
@@ -149,16 +193,32 @@ function renderDetail(entry) {
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean);
+  const desc = (entry.description || '').trim();
   detailEl.innerHTML = `
     <h2>${escapeHtml(entry.title)}</h2>
-    <div class="meta">#${entry.id} · ${escapeHtml(entry.category)} · ${LEVEL_NAMES[entry.level] || 'Common'}</div>
+    <div class="detail-chips">
+      <span class="chip"><span class="cat-swatch" style="background: ${categoryColor(entry.category)}"></span>${escapeHtml(categoryTitle(entry.category))}</span>
+      <span class="chip"><span class="dot ${LEVEL_DOT[entry.level] || 'dot-common'}"></span>${LEVEL_NAMES[entry.level] || 'Common'}</span>
+      <span class="detail-id">#${entry.id}</span>
+    </div>
     <pre>${escapeHtml(entry.command)}</pre>
-    ${entry.description ? `<p class="desc">${escapeHtml(entry.description)}</p>` : ''}
-    ${entry.example ? `<p class="example">Example: <code>${escapeHtml(entry.example)}</code></p>` : ''}
+    <div class="desc-block">
+      <div class="section-label">What it does</div>
+      ${desc ? `<p class="desc">${escapeHtml(desc)}</p>` : '<p class="desc desc-empty">No description yet.</p>'}
+    </div>
+    ${entry.example ? `<div class="example-block">
+      <div class="section-label">Example</div>
+      <p class="example"><code>${escapeHtml(entry.example)}</code></p>
+    </div>` : ''}
     ${tags.length > 0 ? `<div class="tag-chips">${tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
     <button class="copy-btn" id="copy-btn">Copy command</button>
     <button class="fav-toggle${favorites.has(entry.id) ? ' on' : ''}" id="fav-toggle">${favorites.has(entry.id) ? '★ Favorited' : '☆ Add to favorites'}</button>`;
-  document.getElementById('copy-btn').addEventListener('click', () => copyText(entry.command));
+  document.getElementById('copy-btn').addEventListener('click', () => {
+    history = recordHistory(history, entry);
+    saveHistory(history);
+    renderHistory();
+    copyText(entry.command);
+  });
   document.getElementById('fav-toggle').addEventListener('click', () => {
     toggleFavorite(entry.id);
     renderDetail(entry);
@@ -188,7 +248,12 @@ listEl.addEventListener('click', async (event) => {
   try {
     const response = await fetch('/api/entries/' + selectedId);
     const data = await response.json();
-    if (data.entry) renderDetail(data.entry);
+    if (data.entry) {
+      renderDetail(data.entry);
+      history = recordHistory(history, data.entry);
+      saveHistory(history);
+      renderHistory();
+    }
   } catch {
     showToast('Could not load the details.');
   }
@@ -202,6 +267,34 @@ categoriesEl.addEventListener('click', (event) => {
   renderDetail(null);
   renderCategories();
   loadEntries();
+});
+
+historyListEl.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-history]');
+  if (!button) return;
+  const id = Number(button.dataset.history);
+  selectedId = id;
+  document.querySelectorAll('.result-row').forEach((r) => r.classList.toggle('selected', Number(r.dataset.id) === selectedId));
+  try {
+    const response = await fetch('/api/entries/' + id);
+    const data = await response.json();
+    if (data.entry) {
+      renderDetail(data.entry);
+      history = recordHistory(history, data.entry);
+      saveHistory(history);
+      renderHistory();
+      detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  } catch {
+    showToast('Could not load the details.');
+  }
+});
+
+clearHistoryBtn.addEventListener('click', () => {
+  history = [];
+  saveHistory(history);
+  renderHistory();
+  showToast('History cleared');
 });
 
 levelsEl.addEventListener('click', (event) => {
@@ -227,6 +320,7 @@ async function init() {
     return;
   }
   renderCategories();
+  renderHistory();
   await loadEntries();
 }
 

@@ -156,9 +156,30 @@ export async function searchEntries(db, params) {
 
   const countRow = await db.prepare(`SELECT COUNT(*) AS n FROM entries ${clause}`).bind(...args).first();
   const total = (countRow && countRow.n) || 0;
+
+  // Ranking: when searching, the most exact match wins — an exact command
+  // first, then a command that starts with the query, then a command that
+  // contains it, then a title match, then description/tags. A
+  // description-only match must never outrank an exact command match.
+  // Without a query the list stays in plain category/title order. The
+  // trailing id keeps the order deterministic when everything else ties.
+  let orderBy = 'ORDER BY category ASC, title ASC, id ASC';
+  let orderArgs = [];
+  if (q) {
+    const esc = q.replace(/[\\%_]/g, (c) => '\\' + c);
+    orderBy = `ORDER BY
+      CASE
+        WHEN command = ? COLLATE NOCASE THEN 0
+        WHEN command LIKE ? ESCAPE '\\' THEN 1
+        WHEN command LIKE ? ESCAPE '\\' THEN 2
+        WHEN title LIKE ? ESCAPE '\\' THEN 3
+        ELSE 4
+      END ASC, category ASC, title ASC, id ASC`;
+    orderArgs = [q, esc + '%', '%' + esc + '%', '%' + esc + '%'];
+  }
   const { results } = await db
-    .prepare(`SELECT id, category, command, title, description, tags, example, level FROM entries ${clause} ORDER BY category ASC, title ASC LIMIT ? OFFSET ?`)
-    .bind(...args, limit, offset)
+    .prepare(`SELECT id, category, command, title, description, tags, example, level FROM entries ${clause} ${orderBy} LIMIT ? OFFSET ?`)
+    .bind(...args, ...orderArgs, limit, offset)
     .all();
   return { entries: (results || []).map(toEntry), total };
 }
@@ -205,4 +226,244 @@ export async function deleteEntry(db, id) {
   if (!existing) return { errors: ['entry not found'] };
   await db.prepare('DELETE FROM entries WHERE id = ?').bind(id).run();
   return { errors: [] };
+}
+
+// --- Import / export (admin) ---
+//
+// The file format is the seed format: { version, categories, entries },
+// and a bare flat array of entries is accepted too (what the terminal
+// app's export produces). The rules mirror the terminal app's import:
+// a command that already exists in the same category is updated only
+// where the incoming data is fuller — a non-empty description longer
+// than the stored one, non-empty tags that differ, a level of 1-3 that
+// differs. Everything else counts as unchanged. New commands are
+// inserted; missing fields are tolerated (empty description/tags, level
+// 0 means "not specified": new entries default to Common, updates leave
+// the level alone); a missing category is created on the fly.
+
+export async function exportEntries(db) {
+  const { results } = await db
+    .prepare(
+      'SELECT category, command, title, description, tags, example, level FROM entries ORDER BY category ASC, title ASC, id ASC',
+    )
+    .all();
+  return (results || []).map((r) => ({
+    category: r.category,
+    command: r.command,
+    title: r.title,
+    description: r.description || '',
+    tags: r.tags || '',
+    example: r.example || '',
+    level: r.level,
+  }));
+}
+
+export async function getEntryByCommandAndCategory(db, command, category) {
+  const row = await db
+    .prepare(
+      'SELECT id, category, command, title, description, tags, example, level FROM entries WHERE command = ? AND category = ?',
+    )
+    .bind(command, category)
+    .first();
+  return toEntry(row);
+}
+
+function runeLength(text) {
+  return [...String(text ?? '')].length;
+}
+
+function displayTitle(name) {
+  if (!name) return '';
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// Normalize an uploaded file into { categories, entries }.
+// Returns { errors } when the top-level shape is wrong.
+export function parseImportData(data) {
+  let categories = [];
+  let entries = null;
+  if (Array.isArray(data)) {
+    entries = data;
+  } else if (data && typeof data === 'object') {
+    if (!Array.isArray(data.entries)) {
+      return { errors: ['file must be a JSON array of entries, or an object with an "entries" array'] };
+    }
+    entries = data.entries;
+    if (data.categories !== undefined) {
+      if (!Array.isArray(data.categories)) return { errors: ['"categories" must be an array'] };
+      categories = data.categories;
+    }
+  } else {
+    return { errors: ['file must be a JSON array of entries, or an object with an "entries" array'] };
+  }
+  if (entries.length > 5000) return { errors: ['file has too many entries (max 5000)'] };
+  return { categories, entries };
+}
+
+function cleanImportEntry(raw) {
+  if (!raw || typeof raw !== 'object') return { errors: ['entry is not an object'] };
+  const command = cleanText(raw.command, 500);
+  const title = cleanText(raw.title, 500);
+  const category = cleanText(raw.category, 100);
+  const description = cleanText(raw.description, 4000);
+  const tags = cleanText(raw.tags, 1000);
+  const example = cleanText(raw.example, 2000);
+  const level = raw.level === undefined || raw.level === null || raw.level === '' ? 0 : Number(raw.level);
+  return { command, title, category, description, tags, example, level: Number.isInteger(level) ? level : 0 };
+}
+
+// Compare the file against the live database without writing anything.
+// Returns { errors, stats, actions, categoriesToCreate } where actions
+// describe exactly what an import would do, one per unique command.
+export async function analyzeImport(db, parsed) {
+  const errors = [];
+  const seen = new Map(); // "category\0command" -> entry (last row in the file wins)
+  let duplicatesInFile = 0;
+  let skipped = 0;
+  parsed.entries.forEach((raw, i) => {
+    const entry = cleanImportEntry(raw);
+    if (entry.errors) {
+      errors.push(`row ${i + 1}: ${entry.errors.join('; ')}`);
+      return;
+    }
+    if (!entry.command) {
+      skipped += 1; // empty command: ignored, like the terminal import
+      return;
+    }
+    if (!entry.category) entry.category = 'general';
+    if (!CATEGORY_NAME_RE.test(entry.category)) {
+      errors.push(`row ${i + 1}: category '${entry.category}' must be lowercase letters, digits and dashes`);
+      return;
+    }
+    const key = entry.category + '\0' + entry.command;
+    if (seen.has(key)) duplicatesInFile += 1;
+    seen.set(key, entry);
+  });
+
+  // Titles declared in the file, for categories created on the fly.
+  const fileTitles = new Map();
+  (parsed.categories || []).forEach((raw, i) => {
+    const { errors: rowErrors, category } = validateCategory(raw ?? {});
+    if (rowErrors.length > 0) {
+      errors.push(`category ${i + 1}: ${rowErrors.join('; ')}`);
+      return;
+    }
+    fileTitles.set(category.name, category.title);
+  });
+
+  // Categories the entries need, created if missing.
+  const categoriesToCreate = [];
+  const needed = [...new Set([...seen.values()].map((e) => e.category))];
+  for (const name of needed) {
+    const existing = await getCategory(db, name);
+    if (!existing) {
+      categoriesToCreate.push({ name, title: fileTitles.get(name) || displayTitle(name) });
+    }
+  }
+  // A file category that no entry uses is still created (it was declared).
+  for (const [name, title] of fileTitles) {
+    if (!needed.includes(name)) {
+      const existing = await getCategory(db, name);
+      if (!existing && !categoriesToCreate.some((c) => c.name === name)) {
+        categoriesToCreate.push({ name, title });
+      }
+    }
+  }
+
+  // Classify each entry against the live database.
+  const actions = [];
+  const samples = { new: [], updated: [], unchanged: [] };
+  let isNew = 0;
+  let updated = 0;
+  let unchanged = 0;
+  for (const entry of seen.values()) {
+    const existing = await getEntryByCommandAndCategory(db, entry.command, entry.category);
+    if (!existing) {
+      isNew += 1;
+      actions.push({ kind: 'new', entry });
+      if (samples.new.length < 5) samples.new.push(entry.command);
+      continue;
+    }
+    const fuller = {};
+    let changed = false;
+    const incomingDesc = entry.description.trim();
+    const storedDesc = (existing.description || '').trim();
+    if (incomingDesc && (storedDesc === '' || runeLength(incomingDesc) > runeLength(storedDesc))) {
+      fuller.description = incomingDesc;
+      changed = true;
+    }
+    const incomingTags = entry.tags.trim();
+    if (incomingTags && incomingTags !== (existing.tags || '')) {
+      fuller.tags = incomingTags;
+      changed = true;
+    }
+    if (entry.level >= 1 && entry.level <= 3 && entry.level !== existing.level) {
+      fuller.level = entry.level;
+      changed = true;
+    }
+    if (!changed) {
+      unchanged += 1;
+      actions.push({ kind: 'unchanged', entry });
+      if (samples.unchanged.length < 5) samples.unchanged.push(entry.command);
+    } else {
+      updated += 1;
+      actions.push({ kind: 'update', entry, id: existing.id, fuller });
+      if (samples.updated.length < 5) samples.updated.push(entry.command);
+    }
+  }
+  return {
+    errors,
+    actions,
+    stats: { new: isNew, updated, unchanged, skipped, duplicatesInFile },
+    samples,
+    categoriesToCreate,
+  };
+}
+
+export async function applyImport(db, analysis) {
+  for (const c of analysis.categoriesToCreate) {
+    await db.prepare('INSERT INTO categories (name, title) VALUES (?, ?)').bind(c.name, c.title).run();
+  }
+  let created = 0;
+  let updated = 0;
+  for (const action of analysis.actions) {
+    if (action.kind === 'new') {
+      const e = action.entry;
+      const level = e.level >= 1 && e.level <= 3 ? e.level : 2;
+      await db
+        .prepare(
+          'INSERT INTO entries (category, command, title, description, tags, example, level) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        )
+        .bind(e.category, e.command, e.title || e.command, e.description, e.tags, e.example, level)
+        .run();
+      created += 1;
+    } else if (action.kind === 'update') {
+      const sets = [];
+      const args = [];
+      if (action.fuller.description !== undefined) {
+        sets.push('description = ?');
+        args.push(action.fuller.description);
+      }
+      if (action.fuller.tags !== undefined) {
+        sets.push('tags = ?');
+        args.push(action.fuller.tags);
+      }
+      if (action.fuller.level !== undefined) {
+        sets.push('level = ?');
+        args.push(action.fuller.level);
+      }
+      await db
+        .prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`)
+        .bind(...args, action.id)
+        .run();
+      updated += 1;
+    }
+  }
+  return {
+    new: created,
+    updated,
+    unchanged: analysis.stats.unchanged,
+    skipped: analysis.stats.skipped,
+    categoriesCreated: analysis.categoriesToCreate.map((c) => c.name),
+  };
 }

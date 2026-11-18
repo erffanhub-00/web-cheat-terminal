@@ -41,27 +41,36 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="entries">Entries</button>
       <button class="tab-btn" data-tab="categories">Categories</button>
+      <button class="tab-btn" data-tab="import">Import / Export</button>
     </div>
 
     <div id="tab-entries" class="tab-panel">
       <div class="toolbar">
         <input id="entry-search" type="search" placeholder="Search entries…" autocomplete="off">
+        <select id="filter-category" aria-label="Filter by category"></select>
+        <select id="filter-level" aria-label="Filter by usefulness">
+          <option value="0">All levels</option>
+          <option value="1">Essential</option>
+          <option value="2">Common</option>
+          <option value="3">Advanced</option>
+        </select>
         <button id="new-entry-btn" class="primary-btn">+ New entry</button>
       </div>
-      <p id="entry-count" class="dim"></p>
-      <table class="admin-table">
-        <thead><tr><th>Command</th><th>Category</th><th>Level</th><th></th></tr></thead>
-        <tbody id="entry-rows"></tbody>
-      </table>
 
       <form id="entry-form" class="card form-card hidden">
         <h2 id="entry-form-title">New entry</h2>
         <input type="hidden" id="entry-id">
         <label>Command <input id="f-command" required></label>
         <label>Title <input id="f-title" required></label>
-        <label>Description <textarea id="f-description" rows="3"></textarea></label>
+        <label>Description
+          <textarea id="f-description" rows="4"></textarea>
+          <span class="form-hint">The description is what the site teaches — write it like a short explanation.</span>
+        </label>
         <label>Category
-          <select id="f-category"></select>
+          <span class="field-row">
+            <select id="f-category"></select>
+            <button type="button" id="new-category-btn" class="ghost-btn small-btn">+ New category</button>
+          </span>
         </label>
         <label>Tags (comma-separated) <input id="f-tags" placeholder="docker,containers"></label>
         <label>Example <input id="f-example"></label>
@@ -78,6 +87,15 @@
         </div>
         <p id="entry-error" class="error hidden"></p>
       </form>
+
+      <p id="entry-count" class="dim"></p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Command</th><th>Description</th><th>Category</th><th>Level</th><th></th></tr></thead>
+        <tbody id="entry-rows"></tbody>
+      </table>
+      </div>
+      <button id="show-more-btn" class="ghost-btn show-more-btn hidden">Show more</button>
     </div>
 
     <div id="tab-categories" class="tab-panel hidden">
@@ -90,10 +108,43 @@
         </div>
         <p id="category-error" class="error hidden"></p>
       </form>
+      <div class="table-scroll">
       <table class="admin-table">
         <thead><tr><th>Name</th><th>Title</th><th>Entries</th><th></th></tr></thead>
         <tbody id="category-rows"></tbody>
       </table>
+      </div>
+    </div>
+
+    <div id="tab-import" class="tab-panel hidden">
+      <div class="card">
+        <h2>Export</h2>
+        <p class="dim">Download everything as one JSON file — the same seed format the site and the terminal app use. Edit it and import it back.</p>
+        <button id="export-btn" class="primary-btn">Download entries (.json)</button>
+      </div>
+      <div class="card">
+        <h2>Import</h2>
+        <p class="dim">Upload a JSON file in the seed format (<code>{categories, entries}</code>) or a flat list of entries. A preview shows what would change before anything is written: new commands are added, existing ones are updated only where the file has more to say, the rest stays untouched.</p>
+        <div class="import-row">
+          <label class="file-btn">Choose a JSON file
+            <input id="import-file" type="file" accept="application/json,.json" hidden>
+          </label>
+          <span id="import-file-name" class="dim"></span>
+        </div>
+        <div class="form-actions">
+          <button id="import-preview-btn" class="primary-btn" disabled>Preview import</button>
+        </div>
+        <div id="import-preview" class="hidden">
+          <div id="import-summary" class="import-summary"></div>
+          <div id="import-samples" class="dim"></div>
+          <div id="import-errors" class="error"></div>
+          <div class="form-actions">
+            <button id="import-confirm-btn" class="primary-btn" disabled>Import</button>
+            <button id="import-cancel-btn" class="ghost-btn">Cancel</button>
+          </div>
+        </div>
+        <p id="import-result" class="dim"></p>
+      </div>
     </div>
   </section>
 </main>

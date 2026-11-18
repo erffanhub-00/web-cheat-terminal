@@ -49,6 +49,7 @@ export async function seedTestData(db) {
       ('linux', 'ls -la', 'ls -la', 'List files with details', 'linux,files', '', 1),
       ('linux', 'grep -r foo .', 'grep -r foo .', 'Search text in files', 'linux,search', '', 2),
       ('docker', 'docker ps', 'docker ps', 'List running containers', 'docker,containers', '', 1),
-      ('docker', 'docker compose up', 'docker compose up', 'Start the stack', 'docker,containers', '', 3);
+      ('docker', 'docker compose up', 'docker compose up', 'Start the stack', 'docker,containers', '', 3),
+      ('docker', 'Port unreachable', 'Port unreachable', 'docker ps (Ports column), ss -tlnp | grep <port>', 'docker,troubleshooting', '', 2);
   `);
 }
